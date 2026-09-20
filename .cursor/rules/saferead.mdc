@@ -1,0 +1,36 @@
+---
+description: SafeRead 项目架构与关键约定
+alwaysApply: true
+---
+
+# SafeRead
+
+本地 Tauri 2 隐私阅读应用：录入本人人脸后打开网页；检测到第二人或非本人面孔时隐藏窗口。托盘 + `Ctrl+Shift+S` 恢复。
+
+## 结构
+
+- `src/`：React 设置页 + 摄像头监控（face-api / coco-ssd）
+- `src-tauri/`：窗口、托盘、快捷键；`main` = 设置，`reader` = 外链阅读窗
+- 设置存 `plugin-store`（`pageUrl`、人脸描述子）
+
+## 监控启停
+
+仅在阅读窗**可见且前台**时跑摄像头。暂停条件：
+
+- 隐私隐藏 → `privacy-hidden` / `privacy-restored`
+- 最小化 → `reader-minimized` / `reader-restored`
+- 失焦（被遮挡）→ `reader-blurred` / `reader-focused`
+- 关闭 → `reader-closed`（payload 为当前 URL，需写回 `pageUrl`）
+
+启动**不要**自动打开阅读窗；由用户手动打开。
+
+## Windows 硬性约定
+
+- 创建 `WebviewWindow` 的 command **必须 `async`**，否则同步调用会死锁（黑屏且关不掉）
+- `capabilities` 需包含 `main` 与 `reader`
+- 设置窗关闭是隐藏到托盘，不是退出；退出走托盘菜单
+
+## 改动注意
+
+- 窗口事件在 `windows_ctrl.rs`，监控状态机在 `src/lib/monitor.ts`
+- 阅读中导航的 URL 靠 `on_navigation` + 关闭时 `window.url()` 缓存

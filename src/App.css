@@ -1,0 +1,201 @@
+:root {
+  color-scheme: dark;
+  --bg: #12141a;
+  --panel: #1b1f29;
+  --line: #2c3342;
+  --text: #eef1f6;
+  --muted: #9aa3b5;
+  --accent: #7ad4c4;
+  --accent-dim: #1f3d38;
+  --danger: #e08a8a;
+  --shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    radial-gradient(circle at top right, #22302f 0%, transparent 32%),
+    var(--bg);
+}
+
+.shell {
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 28px 20px 36px;
+}
+
+.hero h1 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  letter-spacing: 0.04em;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.lead,
+.hint,
+.status,
+.message {
+  color: var(--muted);
+}
+
+.lead {
+  margin: 0;
+}
+
+.panel {
+  margin-top: 22px;
+  padding: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.steps li {
+  padding: 8px 6px;
+  text-align: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+
+.steps li.active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.steps li.done {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: var(--accent-dim);
+}
+
+.video-wrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #0c0e13;
+  aspect-ratio: 4 / 3;
+}
+
+video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.badge {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(12, 14, 19, 0.72);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.badge.live {
+  color: var(--accent);
+}
+
+.status {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+input,
+button {
+  font: inherit;
+  border-radius: 10px;
+}
+
+input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: #12151c;
+  color: var(--text);
+}
+
+button {
+  padding: 10px 14px;
+  border: 0;
+  background: var(--accent);
+  color: #102421;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.hint,
+.message {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.message {
+  color: var(--danger);
+}
