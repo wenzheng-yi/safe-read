@@ -1,10 +1,28 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{
-    AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
-    WindowEvent,
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Runtime, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder, WindowEvent,
 };
+use tauri_plugin_store::StoreExt;
 use url::Url;
+
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReaderBounds {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub maximized: bool,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReaderClosedPayload {
+    url: String,
+    bounds: Option<ReaderBounds>,
+}
 
 pub static QUITTING: AtomicBool = AtomicBool::new(false);
 
@@ -14,7 +32,11 @@ const MAIN_LABEL: &str = "main";
 // Must be async on Windows: sync commands deadlock inside WebviewWindowBuilder::build
 // (blank/black window that cannot be closed).
 #[tauri::command]
-pub async fn open_reader(app: AppHandle, url: String) -> Result<(), String> {
+pub async fn open_reader(
+    app: AppHandle,
+    url: String,
+    reader_bounds: Option<ReaderBounds>,
+) -> Result<(), String> {
     let parsed = normalize_url(&url)?;
     if let Some(reader) = app.get_webview_window(READER_LABEL) {
         reader.navigate(parsed).map_err(|e| e.to_string())?;
@@ -26,7 +48,7 @@ pub async fn open_reader(app: AppHandle, url: String) -> Result<(), String> {
     let last_url = Arc::new(Mutex::new(parsed.clone()));
     let nav_url = last_url.clone();
 
-    let reader = WebviewWindowBuilder::new(&app, READER_LABEL, WebviewUrl::External(parsed))
+    let mut builder = WebviewWindowBuilder::new(&app, READER_LABEL, WebviewUrl::External(parsed))
         .title("SafeRead")
         .inner_size(1200.0, 800.0)
         .resizable(true)
@@ -39,9 +61,19 @@ pub async fn open_reader(app: AppHandle, url: String) -> Result<(), String> {
                 *guard = url.clone();
             }
             true
-        })
-        .build()
-        .map_err(|e| e.to_string())?;
+        });
+
+    if let Some(bounds) = reader_bounds {
+        if bounds.maximized {
+            builder = builder.maximized(true);
+        } else if bounds.width > 0.0 && bounds.height > 0.0 {
+            builder = builder
+                .inner_size(bounds.width, bounds.height)
+                .position(bounds.x, bounds.y);
+        }
+    }
+
+    let reader = builder.build().map_err(|e| e.to_string())?;
 
     apply_black_titlebar(&reader);
 
@@ -53,17 +85,14 @@ pub async fn open_reader(app: AppHandle, url: String) -> Result<(), String> {
         match event {
             WindowEvent::CloseRequested { .. } => {
                 if !closed_emitted.swap(true, Ordering::Relaxed) {
-                    let url = current_reader_url(&app_handle, &closed_url);
-                    let _ = app_handle.emit("reader-closed", url);
+                    let payload = reader_closed_payload(&app_handle, &closed_url);
+                    let _ = app_handle.emit("reader-closed", payload);
                 }
             }
             WindowEvent::Destroyed if !QUITTING.load(Ordering::Relaxed) => {
                 if !closed_emitted.swap(true, Ordering::Relaxed) {
-                    let url = closed_url
-                        .lock()
-                        .map(|u| u.to_string())
-                        .unwrap_or_default();
-                    let _ = app_handle.emit("reader-closed", url);
+                    let payload = reader_closed_payload(&app_handle, &closed_url);
+                    let _ = app_handle.emit("reader-closed", payload);
                 }
                 let _ = show_settings_window(&app_handle);
             }
@@ -101,6 +130,60 @@ pub async fn open_reader(app: AppHandle, url: String) -> Result<(), String> {
     Ok(())
 }
 
+fn reader_bounds(window: &WebviewWindow) -> Option<ReaderBounds> {
+    let maximized = window.is_maximized().ok()?;
+    if maximized {
+        return Some(ReaderBounds {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+            maximized: true,
+        });
+    }
+
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let position = window.outer_position().ok()?;
+    let size = window.inner_size().ok()?;
+    let logical_pos: LogicalPosition<f64> = position.to_logical(scale);
+    let logical_size: LogicalSize<f64> = size.to_logical(scale);
+
+    Some(ReaderBounds {
+        x: logical_pos.x,
+        y: logical_pos.y,
+        width: logical_size.width,
+        height: logical_size.height,
+        maximized: false,
+    })
+}
+
+fn reader_closed_payload(app: &AppHandle, fallback: &Arc<Mutex<Url>>) -> ReaderClosedPayload {
+    let url = current_reader_url(app, fallback);
+    let bounds = app
+        .get_webview_window(READER_LABEL)
+        .and_then(|window| reader_bounds(&window));
+    ReaderClosedPayload { url, bounds }
+}
+
+pub fn persist_reader_state(app: &AppHandle) -> Result<(), String> {
+    let Some(window) = app.get_webview_window(READER_LABEL) else {
+        return Ok(());
+    };
+
+    let url = window.url().map(|u| u.to_string()).unwrap_or_default();
+    let bounds = reader_bounds(&window);
+
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    if !url.trim().is_empty() && url != "about:blank" {
+        store.set("pageUrl", url);
+    }
+    if let Some(bounds) = bounds {
+        let value = serde_json::to_value(bounds).map_err(|e| e.to_string())?;
+        store.set("readerBounds", value);
+    }
+    store.save().map_err(|e| e.to_string())
+}
+
 fn current_reader_url(app: &AppHandle, fallback: &Arc<Mutex<Url>>) -> String {
     if let Some(window) = app.get_webview_window(READER_LABEL) {
         if let Ok(url) = window.url() {
@@ -114,6 +197,14 @@ fn current_reader_url(app: &AppHandle, fallback: &Arc<Mutex<Url>>) -> String {
         .lock()
         .map(|u| u.to_string())
         .unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn set_reader_title(app: AppHandle, title: String) -> Result<(), String> {
+    let Some(reader) = app.get_webview_window(READER_LABEL) else {
+        return Ok(());
+    };
+    reader.set_title(&title).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

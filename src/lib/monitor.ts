@@ -1,11 +1,17 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { startCamera, stopCamera } from "./camera";
-import { detectFaces, faceShouldHide, loadFaceModels } from "./face";
-import { hideApp } from "./reader";
+import {
+  classifyFaces,
+  detectFaces,
+  loadFaceModels,
+  type FaceMatch,
+} from "./face";
+import { hideApp, setReaderTitle } from "./reader";
 import { countNearbyPeople, loadPersonModel } from "./person";
 
 const INTERVAL_MS = 280;
 const HIT_FRAMES = 2;
+const TITLE_PREFIX = "SafeRead";
 
 export type MonitorStatus = {
   running: boolean;
@@ -14,8 +20,36 @@ export type MonitorStatus = {
   unfocused: boolean;
   faces: number;
   people: number;
+  faceMatch: FaceMatch;
   error: string | null;
 };
+
+export function formatDetectionLine(status: MonitorStatus): string {
+  const face =
+    status.faceMatch === "owner"
+      ? `人脸 ${status.faces}（本人）`
+      : status.faceMatch === "stranger"
+        ? `人脸 ${status.faces}（非本人）`
+        : status.faceMatch === "multiple"
+          ? `人脸 ${status.faces}（多人）`
+          : `人脸 ${status.faces}`;
+  const people = `人体 ${status.people}`;
+  const other =
+    status.people >= 2 || status.faceMatch === "multiple"
+      ? "出现其他人"
+      : status.faceMatch === "stranger"
+        ? "出现非本人"
+        : null;
+  return other ? `${face} · ${people} · ${other}` : `${face} · ${people}`;
+}
+
+export function formatReaderTitle(status: MonitorStatus): string {
+  if (status.error) return `${TITLE_PREFIX}  ·  检测异常`;
+  if (status.hiding) return `${TITLE_PREFIX}  ·  ${formatDetectionLine(status)}  ·  已隐藏`;
+  if (status.minimized || status.unfocused) return `${TITLE_PREFIX}  ·  监控已暂停`;
+  if (!status.running) return TITLE_PREFIX;
+  return `${TITLE_PREFIX}  ·  ${formatDetectionLine(status)}`;
+}
 
 type Options = {
   getOwner: () => number[] | null;
@@ -46,12 +80,18 @@ export function createMonitor(options: Options) {
     unfocused: false,
     faces: 0,
     people: 0,
+    faceMatch: "none",
     error: null,
   };
+  let lastTitle = TITLE_PREFIX;
 
   const emit = (patch: Partial<MonitorStatus>) => {
     last = { ...last, ...patch };
     options.onStatus(last);
+    const title = formatReaderTitle(last);
+    if (title === lastTitle) return;
+    lastTitle = title;
+    void setReaderTitle(title);
   };
 
   let ticking = false;
@@ -68,14 +108,15 @@ export function createMonitor(options: Options) {
         detectFaces(video),
         countNearbyPeople(video),
       ]);
+      const faceMatch = classifyFaces(detections, options.getOwner());
       const danger =
-        people >= 2 || faceShouldHide(detections, options.getOwner());
+        people >= 2 || faceMatch === "stranger" || faceMatch === "multiple";
       if (danger) {
         hits += 1;
       } else {
         hits = 0;
       }
-      emit({ faces: detections.length, people, error: null });
+      emit({ faces: detections.length, people, faceMatch, error: null });
       if (hits >= HIT_FRAMES) {
         hits = 0;
         hiding = true;
@@ -84,7 +125,13 @@ export function createMonitor(options: Options) {
         stopCamera(stream);
         stream = null;
         await hideApp();
-        emit({ running: false, hiding: true, faces: detections.length, people });
+        emit({
+          running: false,
+          hiding: true,
+          faces: detections.length,
+          people,
+          faceMatch,
+        });
       }
     } catch (error) {
       emit({
@@ -134,6 +181,9 @@ export function createMonitor(options: Options) {
       hiding: false,
       minimized: false,
       unfocused: false,
+      faces: 0,
+      people: 0,
+      faceMatch: "none",
       error: null,
     });
   }
@@ -198,6 +248,10 @@ export function createMonitor(options: Options) {
       hiding: false,
       minimized: false,
       unfocused: false,
+      faces: 0,
+      people: 0,
+      faceMatch: "none",
+      error: null,
     });
   }
 

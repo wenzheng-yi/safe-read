@@ -8,8 +8,8 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{Manager, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use windows_ctrl::{
-    apply_black_titlebar, hide_app, open_reader, restore_app, restore_windows, show_settings,
-    QUITTING,
+    apply_black_titlebar, hide_app, open_reader, persist_reader_state, restore_app,
+    restore_windows, set_reader_title, show_settings, QUITTING,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -29,7 +29,8 @@ pub fn run() {
             open_reader,
             hide_app,
             restore_app,
-            show_settings
+            show_settings,
+            set_reader_title
         ])
         .setup(|app| {
             if let Some(main) = app.get_webview_window("main") {
@@ -74,6 +75,7 @@ pub fn run() {
                     }
                     "quit" => {
                         QUITTING.store(true, Ordering::Relaxed);
+                        let _ = persist_reader_state(app);
                         app.exit(0);
                     }
                     _ => {}

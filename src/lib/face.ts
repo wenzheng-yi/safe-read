@@ -41,18 +41,23 @@ export async function captureOwnerDescriptor(video: HTMLVideoElement): Promise<n
   return Array.from(averageDescriptors(samples));
 }
 
-export function faceShouldHide(
-  detections: faceapi.WithFaceDescriptor<
-    faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection }, faceapi.FaceLandmarks68>
-  >[],
+type FaceDetections = faceapi.WithFaceDescriptor<
+  faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection }, faceapi.FaceLandmarks68>
+>[];
+
+export type FaceMatch = "none" | "owner" | "stranger" | "multiple";
+
+export function classifyFaces(
+  detections: FaceDetections,
   owner: number[] | null,
-): boolean {
-  if (!owner || detections.length === 0) return false;
-  if (detections.length >= 2) return true;
+): FaceMatch {
+  if (detections.length === 0) return "none";
+  if (detections.length >= 2) return "multiple";
+  if (!owner) return "none";
 
   const ownerDesc = new Float32Array(owner);
   const distance = faceapi.euclideanDistance(detections[0].descriptor, ownerDesc);
-  return distance > MATCH_THRESHOLD;
+  return distance > MATCH_THRESHOLD ? "stranger" : "owner";
 }
 
 function averageDescriptors(descriptors: Float32Array[]): Float32Array {

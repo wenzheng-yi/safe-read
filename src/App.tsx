@@ -2,13 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { captureOwnerDescriptor, loadFaceModels } from "./lib/face";
 import { startCamera, stopCamera } from "./lib/camera";
-import { createMonitor, type MonitorStatus } from "./lib/monitor";
+import {
+  createMonitor,
+  formatDetectionLine,
+  type MonitorStatus,
+} from "./lib/monitor";
 import { openReader } from "./lib/reader";
 import { loadPersonModel } from "./lib/person";
 import {
   isReady,
   loadSettings,
   saveSettings,
+  type ReaderBounds,
   type Settings,
 } from "./lib/settings";
 import "./App.css";
@@ -22,6 +27,7 @@ const EMPTY_STATUS: MonitorStatus = {
   unfocused: false,
   faces: 0,
   people: 0,
+  faceMatch: "none",
   error: null,
 };
 
@@ -47,7 +53,7 @@ function App() {
     if (status.minimized) return "阅读窗口已最小化，监控已暂停";
     if (status.unfocused) return "阅读窗口不在前台，监控已暂停";
     if (status.running) {
-      return `监控中 · 人脸 ${status.faces} · 人体 ${status.people}`;
+      return `监控中 · ${formatDetectionLine(status)}`;
     }
     return modelsLoaded ? "模型已就绪" : "正在加载检测模型";
   }, [modelsLoaded, status]);
@@ -61,10 +67,18 @@ function App() {
     void monitor.attachEvents();
 
     let unlistenClosed: (() => void) | undefined;
-    void listen<string>("reader-closed", (event) => {
-      const url = event.payload?.trim();
-      if (!url || url === "about:blank") return;
-      void saveSettings({ pageUrl: url }).then((next) => {
+    void listen<{ url: string; bounds: ReaderBounds | null }>("reader-closed", (event) => {
+      const url = event.payload?.url?.trim();
+      const bounds = event.payload?.bounds ?? null;
+      const patch: Partial<Settings> = {};
+      if (url && url !== "about:blank") {
+        patch.pageUrl = url;
+      }
+      if (bounds) {
+        patch.readerBounds = bounds;
+      }
+      if (Object.keys(patch).length === 0) return;
+      void saveSettings(patch).then((next) => {
         setSettings(next);
         setUrlDraft(next.pageUrl);
       });
@@ -89,6 +103,7 @@ function App() {
         pageUrl: "",
         faceDescriptor: null,
         shortcut: "Ctrl+Shift+S",
+        readerBounds: null,
       });
       setStep("enroll");
       setMessage(error instanceof Error ? error.message : String(error));
@@ -186,7 +201,7 @@ function App() {
     setBusy(true);
     setMessage(null);
     try {
-      await openReader(url);
+      await openReader(url, settings?.readerBounds);
       await monitorRef.current?.start(video);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
