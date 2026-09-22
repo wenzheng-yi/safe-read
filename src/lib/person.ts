@@ -32,7 +32,7 @@ export async function countNearbyPeople(video: HTMLVideoElement): Promise<number
   const minArea = frameArea * 0.04;
 
   return predictions.filter((item) => {
-    if (item.class !== "person" || item.score < 0.5) return false;
+    if (item.class !== "person" || item.score < 0.45) return false;
     const [, , width, height] = item.bbox;
     return width * height >= minArea;
   }).length;
